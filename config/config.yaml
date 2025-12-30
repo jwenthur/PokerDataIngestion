@@ -1,0 +1,17 @@
+site: "GG"
+input_dir: "C:\\Users\\jwent\\OneDrive\\Desktop\\Poker\\Poker Sites\\GG Poker\\Tournaments"
+
+dry_run: false
+
+session_gap_minutes: 60
+avg_minutes_per_tournament: 5  # reserved for later reporting
+
+file_extension: ".txt"
+
+folders:
+  processed: "Processed"
+  needs_review: "Needs Review"
+  duplicate: "Duplicate"
+  logs: "logs"
+
+log_file_name: "import_log.jsonl"
