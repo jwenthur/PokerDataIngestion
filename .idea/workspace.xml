@@ -1,32 +1,59 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
   <component name="ChangeListManager">
-    <list default="true" id="13170ce9-d96a-4586-9df1-b3537e4d43c7" name="Changes" comment="" />
+    <list default="true" id="13170ce9-d96a-4586-9df1-b3537e4d43c7" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/importer/file_router.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/PokerDataIngestion.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/PokerDataIngestion.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/config/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/db/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/db/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/db/engine.py" beforeDir="false" afterPath="$PROJECT_DIR$/db/engine.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/db/queries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/importer/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/importer/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/importer/filer_router.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/importer/gg_summary_parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/importer/gg_summary_parser.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/importer/session_assigner.py" beforeDir="false" afterPath="$PROJECT_DIR$/importer/session_assigner.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/importer/tournament_importer.py" beforeDir="false" afterPath="$PROJECT_DIR$/importer/tournament_importer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/hashing.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/hashing.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/text_utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/text_utils.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 4
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 4
+}</component>
   <component name="ProjectId" id="37a2P4PiQy18SRTPb8IAyjUK9aZ" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "main",
-    "last_opened_file_path": "C:/Users/jwent/OneDrive/Documents/GitHub/PokerDataIngestion",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/jwent/OneDrive/Documents/GitHub/PokerDataIngestion&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\jwent\OneDrive\Documents\GitHub\PokerDataIngestion" />

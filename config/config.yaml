@@ -1,7 +1,7 @@
 site: "GG"
 input_dir: "C:\\Users\\jwent\\OneDrive\\Desktop\\Poker\\Poker Sites\\GG Poker\\Tournaments"
 
-dry_run: false
+dry_run: true
 
 session_gap_minutes: 60
 avg_minutes_per_tournament: 5  # reserved for later reporting
