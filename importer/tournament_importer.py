@@ -86,13 +86,19 @@ class TournamentImporter:
         if not cfg.input_dir.exists():
             raise FileNotFoundError(f"Input directory does not exist: {cfg.input_dir}")
 
-        # Only scan the parent folder (non-recursive)
-        return sorted(
-            [
-                p for p in cfg.input_dir.iterdir()
-                if p.is_file() and p.suffix.lower() == cfg.file_extension.lower()
-            ]
-        )
+        # Normalize extension (protect against YAML whitespace / casing)
+        ext = (cfg.file_extension or "").strip().lower()
+        if not ext.startswith("."):
+            ext = "." + ext
+
+        all_files = [p for p in cfg.input_dir.iterdir() if p.is_file()]
+        filtered = [p for p in all_files if p.suffix.lower() == ext]
+
+        # Debug (remove after first successful run)
+        print("DEBUG expected ext:", repr(ext))
+
+        # Deterministic ordering by name (we'll still do start_time sorting later)
+        return sorted(filtered, key=lambda p: p.name.lower())
 
     def run(self) -> None:
         cfg = self.cfg
@@ -102,6 +108,7 @@ class TournamentImporter:
         duplicates = 0
         needs_review = 0
         errors = 0
+        dry_runs = 0
 
         files = self._list_input_files()
 
@@ -109,6 +116,7 @@ class TournamentImporter:
         file_queue = []
 
         for path in files:
+            print("DEBUG processing:", path.name)
             try:
                 text_content = read_text_with_fallback(path)
                 parsed, _ = self.parser.parse(self.cfg.site, text_content)
@@ -176,6 +184,7 @@ class TournamentImporter:
                 event["payout"] = parsed.payout_amount
 
                 if cfg.dry_run:
+                    dry_runs += 1
                     event["status"] = "dry_run"
                     event["reason"] = "no_db_no_move"
                     log_jsonl(cfg.folders.log_path, event)
@@ -259,4 +268,4 @@ class TournamentImporter:
                 event["reason"] = f"fatal:{type(e).__name__}"
                 log_jsonl(cfg.folders.log_path, event)
 
-        print(f"Inserted: {inserted} | Duplicates: {duplicates} | Needs Review: {needs_review} | Errors: {errors}")
+        print(f"Dry Runs: {dry_runs} | Inserted: {inserted} | Duplicates: {duplicates} | Needs Review: {needs_review} | Errors: {errors}")

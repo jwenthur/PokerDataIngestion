@@ -5,22 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="13170ce9-d96a-4586-9df1-b3537e4d43c7" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/importer/file_router.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/PokerDataIngestion.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/PokerDataIngestion.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/config/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config/config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/db/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/db/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/db/engine.py" beforeDir="false" afterPath="$PROJECT_DIR$/db/engine.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/db/queries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/importer/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/importer/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/importer/filer_router.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/importer/gg_summary_parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/importer/gg_summary_parser.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/importer/session_assigner.py" beforeDir="false" afterPath="$PROJECT_DIR$/importer/session_assigner.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/importer/tournament_importer.py" beforeDir="false" afterPath="$PROJECT_DIR$/importer/tournament_importer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/hashing.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/hashing.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/text_utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/text_utils.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
