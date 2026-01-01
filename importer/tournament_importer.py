@@ -94,8 +94,8 @@ class TournamentImporter:
         all_files = [p for p in cfg.input_dir.iterdir() if p.is_file()]
         filtered = [p for p in all_files if p.suffix.lower() == ext]
 
-        # Debug (remove after first successful run)
-        print("DEBUG expected ext:", repr(ext))
+        # # Debug (remove after first successful run)
+        # print("DEBUG expected ext:", repr(ext))
 
         # Deterministic ordering by name (we'll still do start_time sorting later)
         return sorted(filtered, key=lambda p: p.name.lower())
@@ -116,7 +116,6 @@ class TournamentImporter:
         file_queue = []
 
         for path in files:
-            print("DEBUG processing:", path.name)
             try:
                 text_content = read_text_with_fallback(path)
                 parsed, _ = self.parser.parse(self.cfg.site, text_content)
