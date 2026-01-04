@@ -58,7 +58,7 @@ class GGSummaryParser:
         re.IGNORECASE | re.MULTILINE,
     )
     RE_FINISH = re.compile(
-        r"^\s*You\s+finished\s+in\s+(?P<place>\d+)\s+place\.\s*$",
+        r"^\s*You\s+finished\s+in\s+(?P<place>\d+)(?:st|nd|rd|th)?\s+place\.?\s*$",
         re.IGNORECASE | re.MULTILINE,
     )
     RE_PLACEMENT_LINE = re.compile(
