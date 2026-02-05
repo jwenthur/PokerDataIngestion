@@ -5,8 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="13170ce9-d96a-4586-9df1-b3537e4d43c7" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/importer/gg_hand_history_parser.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/importer/hand_importer.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/importer/spot_classifier.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/models/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/models/parsed_hand.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/models/spot_types.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/importer/gg_summary_parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/importer/gg_summary_parser.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -27,6 +32,9 @@
   &quot;associatedIndex&quot;: 4
 }</component>
   <component name="ProjectId" id="37a2P4PiQy18SRTPb8IAyjUK9aZ" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
