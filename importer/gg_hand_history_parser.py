@@ -159,12 +159,13 @@ def _calculate_hero_total_bet(hand_text: str) -> int:
         # "calls 110"
         elif m := re.match(r"calls (?P<amt>[\d,]+)", action):
             total_bet += _parse_int(m.group("amt"))
-        # "raises 290 to 380 and is all-in"
-        # The "to 380" is total IN THE POT at that point from Hero
-        # We need to add the NET increase from this raise
+        # "raises 290 to 380"
+        # The "to 380" is the TOTAL Hero has committed after the raise
+        # We should use this as total, not add the delta
         elif m := re.match(r"raises (?P<raise_amt>[\d,]+) to (?P<to_amt>[\d,]+)", action):
-            raise_amt = _parse_int(m.group("raise_amt"))
-            total_bet += raise_amt
+            to_amt = _parse_int(m.group("to_amt"))
+            # Use 'to_amt' as the running total (it includes all previous bets this street)
+            total_bet = to_amt
         # "bets 60"
         elif m := re.match(r"bets (?P<amt>[\d,]+)", action):
             total_bet += _parse_int(m.group("amt"))
@@ -200,10 +201,12 @@ def _compute_hero_net_chips(
     )
 
     if summary_match:
-        # Hero won/collected chips - the amount is the total pot won
+        # Hero won/collected chips in the summary line
+        # The amount is the pot won, need to subtract Hero's contribution
         collected = _parse_int(summary_match.group("amount"))
-        hero_stack_end = collected
-        hero_net_chips = collected - hero_stack_start
+        total_bet = _calculate_hero_total_bet(hand_text)
+        hero_net_chips = collected - total_bet
+        hero_stack_end = hero_stack_start + hero_net_chips
         return hero_stack_end, hero_net_chips
 
     # Check if hero lost (showed and lost pattern)
@@ -238,11 +241,13 @@ def _compute_hero_net_chips(
 
     if collect_match:
         collected = _parse_int(collect_match.group("amount"))
-        # The collected amount is the total pot Hero won
-        # Hero's ending stack is the collected amount (since it includes Hero's own bets back)
-        # Hero's net chips is collected minus what Hero started with
-        hero_stack_end = collected
-        hero_net_chips = collected - hero_stack_start
+        # The collected amount is the pot Hero won
+        # Need to account for what Hero put into the pot
+        total_bet = _calculate_hero_total_bet(hand_text)
+        # Hero's net is what they collected minus what they bet
+        hero_net_chips = collected - total_bet
+        # Hero's ending stack is start + net
+        hero_stack_end = hero_stack_start + hero_net_chips
         return hero_stack_end, hero_net_chips
 
     # Check if Hero folded (and didn't win/lose at showdown)

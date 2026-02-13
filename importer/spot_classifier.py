@@ -43,20 +43,22 @@ def _detect_faced_action(
         preflop_text: str,
         sb_amount: int,
         bb_amount: int,
-        hero_position: Optional[str]
+        hero_position: Optional[str],
+        is_hu: bool = False
 ) -> FacedActionType:
     """
     Determine what hero faced BEFORE hero's first action.
 
     Logic:
-    - If hero is SB (first to act): faced NONE
-    - If hero is BB/BTN: look at first villain action before hero acts
+    - HU: SB acts first (faces NONE), BB acts second (faces SB action)
+    - 3H: BTN acts first, SB acts second (faces BTN action), BB acts third
     """
     if not preflop_text or not hero_position:
         return FacedActionType.NONE
 
-    # SB acts first, so faces NONE
-    if hero_position == "SB":
+    # In HU, SB acts first and faces NONE
+    # In 3H, BTN acts first, so SB can face BTN actions
+    if is_hu and hero_position == "SB":
         return FacedActionType.NONE
 
     # Find all action lines in order
@@ -93,8 +95,7 @@ def _detect_faced_action(
         rest_l = rest.lower()
 
         if action == "calls":
-            # In HU SB position, a "call" is typically a limp/complete
-            # e.g., "SB: calls 10" means SB completed to BB
+            # A "call" is typically a limp/complete
             return FacedActionType.LIMP
 
         if action == "raises":
@@ -113,7 +114,8 @@ def _detect_faced_action(
 
         if action == "folds":
             # Villain folded before hero - hero faces NONE
-            return FacedActionType.NONE
+            # Continue looking for other villain actions
+            continue
 
     return FacedActionType.NONE
 
@@ -154,7 +156,8 @@ def classify_preflop(hand: ParsedHand) -> ParsedHand:
             pre,
             hand.sb_amount,
             hand.bb_amount,
-            hand.hero_position
+            hand.hero_position,
+            hand.is_hu
         )
 
     # === SPOT TYPE CLASSIFICATION ===
@@ -167,13 +170,22 @@ def classify_preflop(hand: ParsedHand) -> ParsedHand:
             spot = SpotType.HU_SB_FTA
         elif hand.hero_position == "BB":
             # BB facing SB action
-            if faced == FacedActionType.LIMP:
+            if faced == FacedActionType.NONE:
+                # SB folded before Hero acted - no decision to make
+                # Set spot to None (will be stored as NULL in DB)
+                return replace(
+                    hand,
+                    preflop_spot_type=None,
+                    faced_action_type=faced.value,
+                    hero_preflop_action=hero_action,
+                    is_all_in_preflop=is_all_in_pre,
+                )
+            elif faced == FacedActionType.LIMP:
                 spot = SpotType.HU_BB_VS_SB_LIMP
             elif faced == FacedActionType.MINRAISE:
                 spot = SpotType.HU_BB_VS_SB_MINRAISE
             elif faced == FacedActionType.RAISE:
                 # For now, treat any raise (including 3x, 4x, etc) as part of minraise category
-                # Or we could add a new spot type for "HU_BB_VS_SB_RAISE"
                 spot = SpotType.HU_BB_VS_SB_MINRAISE  # Group all raises together
             elif faced == FacedActionType.OPEN_JAM:
                 spot = SpotType.HU_BB_VS_SB_OPEN_JAM
@@ -183,16 +195,43 @@ def classify_preflop(hand: ParsedHand) -> ParsedHand:
         # 3-handed spots
         if hand.hero_position == "BTN":
             spot = SpotType.TH_BTN_FTA
+
         elif hand.hero_position == "SB":
-            # SB vs BTN open (if BTN raised)
-            if faced in (FacedActionType.RAISE, FacedActionType.MINRAISE, FacedActionType.OPEN_JAM):
+            # Determine what happened before SB acts
+            # Need to check if BTN folded, limped, or raised
+            if faced == FacedActionType.NONE:
+                # BTN folded, SB is first to act vs BB
+                spot = SpotType.TH_SB_FTA
+            elif faced == FacedActionType.LIMP:
+                # BTN limped, SB acts
+                spot = SpotType.TH_SB_VS_BTN_LIMP
+            elif faced in (FacedActionType.RAISE, FacedActionType.MINRAISE, FacedActionType.OPEN_JAM):
+                # BTN raised, SB responds
                 spot = SpotType.TH_SB_VS_BTN_OPEN
             else:
                 spot = SpotType.UNKNOWN
+
         elif hand.hero_position == "BB":
-            # BB vs BTN open
+            # BB needs to check what both BTN and SB did
+            # faced_action_type tells us the last action before Hero
+
             if faced in (FacedActionType.RAISE, FacedActionType.MINRAISE, FacedActionType.OPEN_JAM):
+                # Someone raised (could be BTN or SB)
                 spot = SpotType.TH_BB_VS_BTN_OPEN
+            elif faced == FacedActionType.LIMP:
+                # At least one player limped
+                # Check if both limped or just one
+                # Count limps in action line
+                limp_count = pre.count(": calls ")
+                if limp_count >= 2:
+                    # Both BTN and SB limped
+                    spot = SpotType.TH_BB_VS_BOTH_LIMP
+                else:
+                    # Just SB completed (BTN folded)
+                    spot = SpotType.TH_BB_VS_SB_COMPLETE
+            elif faced == FacedActionType.NONE:
+                # BTN folded, SB completed blind
+                spot = SpotType.TH_BB_VS_SB_COMPLETE
             else:
                 spot = SpotType.UNKNOWN
 
