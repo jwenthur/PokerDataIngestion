@@ -40,5 +40,13 @@ class ParsedHand:
     hero_stack_end: Optional[int]
     hero_net_chips: Optional[int]
 
+    # ChipEV calculation fields
+    went_to_showdown: Optional[bool]
+    allin_street: Optional[str]  # 'preflop', 'flop', 'turn', 'river', or None
+    board_at_allin: Optional[str]  # Board cards when all-in occurred
+    pot_at_allin: Optional[int]
+    hero_equity_at_allin: Optional[float]  # 0-1 range (e.g., 0.6234 = 62.34%)
+    allin_adjusted_chips: Optional[int]
+
     source_file_name: Optional[str]
     source_file_hash: Optional[str]
