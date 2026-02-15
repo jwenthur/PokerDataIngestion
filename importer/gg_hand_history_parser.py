@@ -16,7 +16,7 @@ LEVEL_RE = re.compile(r"Level(?P<level>\d+)\((?P<sb>\d+)/(?P<bb>\d+)\)")
 TS_RE = re.compile(r"- (?P<ts>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})")
 TABLE_RE = re.compile(r"^Table '(?P<table_id>[^']+)' (?P<max_players>\d+)-max Seat #(?P<button_seat>\d+) is the button",
                       re.M)
-SEAT_RE = re.compile(r"^Seat (?P<seat>\d+): (?P<name>.+?) \((?P<stack>\d+) in chips\)", re.M)
+SEAT_RE = re.compile(r"^Seat (?P<seat>\d+): (?P<name>.+?) \((?P<stack>[\d,]+) in chips\)", re.M)
 DEALT_HERO_RE = re.compile(r"^Dealt to Hero \[(?P<c1>[2-9TJQKA][shdc]) (?P<c2>[2-9TJQKA][shdc])\]", re.M)
 
 # Patterns for equity calculation
