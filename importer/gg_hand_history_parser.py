@@ -180,6 +180,95 @@ def _detect_allin_street(hand_text: str) -> Tuple[Optional[str], Optional[str]]:
         return 'river', ''
 
 
+def _calculate_hero_chip_result(hand_text: str, hero_stack_start: Optional[int]) -> Tuple[Optional[int], Optional[int]]:
+    """
+    Calculate hero's ending stack and net chips from hand actions.
+
+    Parses all Hero actions to determine:
+    - How many chips Hero invested (blinds, bets, calls, raises)
+    - How many chips Hero won (collected from pot)
+    - Final stack and net result
+
+    Args:
+        hand_text: The complete hand history text block
+        hero_stack_start: Hero's starting stack for this hand
+
+    Returns:
+        (hero_stack_end, hero_net_chips)
+    """
+    if hero_stack_start is None:
+        return None, None
+
+    # Regex patterns for Hero actions
+    POST_BLIND_RE = re.compile(r"^Hero: posts (?:small blind|big blind) ([\d,]+)", re.M)
+    CALL_RE = re.compile(r"^Hero: calls ([\d,]+)", re.M)
+    RAISE_RE = re.compile(r"^Hero: raises [\d,]+ to ([\d,]+)", re.M)
+    BET_RE = re.compile(r"^Hero: bets ([\d,]+)", re.M)
+    COLLECTED_RE = re.compile(r"^Hero collected ([\d,]+) from pot", re.M)
+    UNCALLED_RE = re.compile(r"^Uncalled bet \(([\d,]+)\) returned to Hero", re.M)
+
+    chips_invested = 0
+    chips_won = 0
+    max_committed = 0
+
+    lines = hand_text.split('\n')
+
+    for line in lines:
+        # Post blinds
+        m = POST_BLIND_RE.match(line)
+        if m:
+            amount = _parse_int(m.group(1))
+            chips_invested += amount
+            max_committed += amount
+            continue
+
+        # Calls
+        m = CALL_RE.match(line)
+        if m:
+            amount = _parse_int(m.group(1))
+            chips_invested += amount
+            max_committed += amount
+            continue
+
+        # Raises - "raises X to Y" means Y is TOTAL amount in pot
+        m = RAISE_RE.match(line)
+        if m:
+            total_amount = _parse_int(m.group(1))
+            additional = total_amount - max_committed
+            chips_invested += additional
+            max_committed = total_amount
+            continue
+
+        # Bets
+        m = BET_RE.match(line)
+        if m:
+            amount = _parse_int(m.group(1))
+            chips_invested += amount
+            max_committed += amount
+            continue
+
+        # Uncalled bets returned
+        m = UNCALLED_RE.match(line)
+        if m:
+            amount = _parse_int(m.group(1))
+            chips_invested -= amount
+            max_committed -= amount
+            continue
+
+        # Chips won
+        m = COLLECTED_RE.match(line)
+        if m:
+            amount = _parse_int(m.group(1))
+            chips_won = amount
+            continue
+
+    # Calculate final results
+    hero_stack_end = hero_stack_start - chips_invested + chips_won
+    hero_net_chips = hero_stack_end - hero_stack_start
+
+    return hero_stack_end, hero_net_chips
+
+
 def _calculate_equity_and_adjusted_chips(
         hand_text: str,
         hero_cards: Optional[str],
@@ -211,7 +300,7 @@ def _calculate_equity_and_adjusted_chips(
     allin_street, board_at_allin = _detect_allin_street(hand_text)
 
     if not allin_street:
-        # No all-in detected, but went to showdown - still went to showdown
+        # No all-in detected, but went to showdown
         return True, None, None, None, None, None, None
 
     # Get villain cards (Hero was in showdown)
@@ -257,7 +346,6 @@ def _calculate_equity_and_adjusted_chips(
 def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
     """
     Parse a GG hand history file into ParsedHand objects.
-    Phase 1: preflop-first extraction; hero_net_chips can be added later.
     """
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         text = f.read()
@@ -275,7 +363,6 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
 
         hand_id = m.group("hand_id")
         tournament_id = int(m.group("tournament_id"))
-        # game_type_text = m.group("game_type").strip()  # optional if you want it later
 
         # Timestamp
         ts_m = TS_RE.search(block)
@@ -293,7 +380,6 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
             sb_amount = int(lvl_m.group("sb"))
             bb_amount = int(lvl_m.group("bb"))
         else:
-            # blinds are essential to compute effective stack; skip if missing
             continue
 
         # Table / button
@@ -314,7 +400,7 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
         for sm in SEAT_RE.finditer(block):
             seat = int(sm.group("seat"))
             name = sm.group("name").strip()
-            stack = _parse_int(sm.group("stack"))  # Handle commas in stack sizes
+            stack = _parse_int(sm.group("stack"))
             seats.append(seat)
             if name == "Hero":
                 hero_seat = seat
@@ -334,12 +420,10 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
         if dealt:
             hero_cards = f"{dealt.group('c1')}{dealt.group('c2')}"
 
-        # Effective stack in BB (start-of-hand approximation; we'll refine to decision-point later)
+        # Effective stack in BB
         effective_stack_bb = None
         stack_bucket = None
         if hero_stack_start is not None and bb_amount:
-            # Approx effective stack = hero stack / BB for now.
-            # Later: use min(hero, villain) and decision-point.
             effective_stack_bb = round(hero_stack_start / bb_amount, 2)
             stack_bucket = _bucket_effective_stack(effective_stack_bb)
 
@@ -350,6 +434,9 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
          hero_equity_at_allin, allin_adjusted_chips, villain_cards) = _calculate_equity_and_adjusted_chips(
             block, hero_cards, hero_seat
         )
+
+        # Calculate hero chip result
+        hero_stack_end, hero_net_chips = _calculate_hero_chip_result(block, hero_stack_start)
 
         parsed.append(
             ParsedHand(
@@ -376,8 +463,8 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
                 is_all_in_preflop=None,  # classifier fills this
                 preflop_action_line=preflop_block or None,
                 hero_stack_start=hero_stack_start,
-                hero_stack_end=None,  # later
-                hero_net_chips=None,  # later
+                hero_stack_end=hero_stack_end,
+                hero_net_chips=hero_net_chips,
                 # ChipEV fields
                 went_to_showdown=went_to_showdown,
                 allin_street=allin_street,
