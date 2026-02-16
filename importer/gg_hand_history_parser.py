@@ -116,7 +116,7 @@ def _extract_showdown_cards(hand_text: str) -> Dict[str, str]:
     """
     shown_cards = {}
     for m in SHOWS_RE.finditer(hand_text):
-        name = m.group("name").strip()
+        name = m.group("n").strip()
         cards = m.group("c1") + m.group("c2")
         shown_cards[name] = cards
     return shown_cards
@@ -302,7 +302,7 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
 
         for sm in SEAT_RE.finditer(block):
             seat = int(sm.group("seat"))
-            name = sm.group("name").strip()
+            name = sm.group("n").strip()
             stack = _parse_int(sm.group("stack"))  # Handle commas in stack sizes
             seats.append(seat)
             if name == "Hero":
