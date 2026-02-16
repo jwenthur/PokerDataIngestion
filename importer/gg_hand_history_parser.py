@@ -184,41 +184,47 @@ def _calculate_equity_and_adjusted_chips(
         hand_text: str,
         hero_cards: Optional[str],
         hero_seat: Optional[int]
-) -> Tuple[bool, Optional[str], Optional[str], Optional[int], Optional[float], Optional[int]]:
+) -> Tuple[bool, Optional[str], Optional[str], Optional[int], Optional[float], Optional[int], Optional[str]]:
     """
     Calculate all-in equity and adjusted chips.
 
     Returns:
         (went_to_showdown, allin_street, board_at_allin, pot_at_allin,
-         hero_equity_at_allin, allin_adjusted_chips)
+         hero_equity_at_allin, allin_adjusted_chips, villain_cards)
     """
     # Check if hand went to showdown
     went_to_showdown = SHOWDOWN_MARK in hand_text
 
     if not went_to_showdown or not hero_cards:
-        return False, None, None, None, None, None
+        return False, None, None, None, None, None, None
+
+    # Extract all shown cards
+    shown_cards = _extract_showdown_cards(hand_text)
+
+    # CRITICAL CHECK: Was Hero in the showdown?
+    # If Hero folded before showdown, Hero won't be in shown_cards
+    if "Hero" not in shown_cards:
+        # Hero folded - don't calculate equity for a pot Hero isn't in
+        return True, None, None, None, None, None, None
 
     # Detect all-in street and board
     allin_street, board_at_allin = _detect_allin_street(hand_text)
 
     if not allin_street:
-        # No all-in detected, but went to showdown - still calc equity at showdown
-        return True, None, None, None, None, None
+        # No all-in detected, but went to showdown - still went to showdown
+        return True, None, None, None, None, None, None
 
-    # Extract villain cards shown
-    shown_cards = _extract_showdown_cards(hand_text)
-
-    # Remove Hero from shown cards to get only villains
+    # Get villain cards (Hero was in showdown)
     villain_cards = {k: v for k, v in shown_cards.items() if k != "Hero"}
 
     if not villain_cards:
         # No villain cards shown, can't calculate equity
-        return True, allin_street, board_at_allin, None, None, None
+        return True, allin_street, board_at_allin, None, None, None, None
 
     # Get pot size from summary
     pot_match = re.search(r"Total pot ([\d,]+)", hand_text)
     if not pot_match:
-        return True, allin_street, board_at_allin, None, None, None
+        return True, allin_street, board_at_allin, None, None, None, None
 
     pot_at_allin = _parse_int(pot_match.group(1))
 
@@ -234,13 +240,18 @@ def _calculate_equity_and_adjusted_chips(
     )
 
     if equity is None:
-        return True, allin_street, board_at_allin, pot_at_allin, None, None
+        # Equity calculation failed
+        villain_cards_str = "|".join([f"{k}:{v}" for k, v in villain_cards.items()])
+        return True, allin_street, board_at_allin, pot_at_allin, None, None, villain_cards_str
 
     # Calculate adjusted chips
     # Hero's EV in this pot = equity * pot_size
     allin_adjusted_chips = int(equity * pot_at_allin)
 
-    return True, allin_street, board_at_allin, pot_at_allin, equity, allin_adjusted_chips
+    # Format villain cards for storage: "player1:AhKd|player2:QsJs"
+    villain_cards_str = "|".join([f"{k}:{v}" for k, v in villain_cards.items()])
+
+    return True, allin_street, board_at_allin, pot_at_allin, equity, allin_adjusted_chips, villain_cards_str
 
 
 def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
@@ -302,7 +313,7 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
 
         for sm in SEAT_RE.finditer(block):
             seat = int(sm.group("seat"))
-            name = sm.group("n").strip()
+            name = sm.group("name").strip()
             stack = _parse_int(sm.group("stack"))  # Handle commas in stack sizes
             seats.append(seat)
             if name == "Hero":
@@ -323,7 +334,7 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
         if dealt:
             hero_cards = f"{dealt.group('c1')}{dealt.group('c2')}"
 
-        # Effective stack in BB (start-of-hand approximation; weâ€™ll refine to decision-point later)
+        # Effective stack in BB (start-of-hand approximation; we'll refine to decision-point later)
         effective_stack_bb = None
         stack_bucket = None
         if hero_stack_start is not None and bb_amount:
@@ -336,7 +347,7 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
 
         # Calculate equity and adjusted chips
         (went_to_showdown, allin_street, board_at_allin, pot_at_allin,
-         hero_equity_at_allin, allin_adjusted_chips) = _calculate_equity_and_adjusted_chips(
+         hero_equity_at_allin, allin_adjusted_chips, villain_cards) = _calculate_equity_and_adjusted_chips(
             block, hero_cards, hero_seat
         )
 
@@ -374,6 +385,7 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
                 pot_at_allin=pot_at_allin,
                 hero_equity_at_allin=hero_equity_at_allin,
                 allin_adjusted_chips=allin_adjusted_chips,
+                villain_cards=villain_cards,
                 source_file_name=file_name,
                 source_file_hash=file_hash,
             )

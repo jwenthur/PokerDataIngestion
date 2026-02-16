@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List
+from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -26,6 +27,7 @@ INSERT INTO public.fact_hand (
     hero_stack_start, hero_stack_end, hero_net_chips,
     went_to_showdown, allin_street, board_at_allin, 
     pot_at_allin, hero_equity_at_allin, allin_adjusted_chips,
+    villain_cards,
     source_file_name, source_file_hash
 )
 VALUES (
@@ -40,6 +42,7 @@ VALUES (
     :hero_stack_start, :hero_stack_end, :hero_net_chips,
     :went_to_showdown, :allin_street, :board_at_allin,
     :pot_at_allin, :hero_equity_at_allin, :allin_adjusted_chips,
+    :villain_cards,
     :source_file_name, :source_file_hash
 )
 ON CONFLICT (site, tournament_id, hand_id)
@@ -56,6 +59,7 @@ WHERE site = :site
 
 
 def _to_row(hand: ParsedHand) -> dict:
+    """Convert ParsedHand to database row dict."""
     return {
         "site": hand.site,
         "tournament_id": hand.tournament_id,
@@ -98,6 +102,7 @@ def _to_row(hand: ParsedHand) -> dict:
         "pot_at_allin": hand.pot_at_allin,
         "hero_equity_at_allin": hand.hero_equity_at_allin,
         "allin_adjusted_chips": hand.allin_adjusted_chips,
+        "villain_cards": hand.villain_cards,
 
         "source_file_name": hand.source_file_name,
         "source_file_hash": hand.source_file_hash,
@@ -113,7 +118,7 @@ class HandImporter:
         self.cfg = cfg
         self.engine = engine
 
-    def _list_input_files(self) -> List:
+    def _list_input_files(self) -> List[Path]:
         hcfg = self.cfg.hand_histories
 
         if not hcfg.input_dir.exists():
@@ -132,7 +137,7 @@ class HandImporter:
         hcfg = cfg.hand_histories
         ensure_dirs(hcfg.folders)
 
-        inserted_files = 0
+        inserted = 0
         duplicates = 0
         needs_review = 0
         errors = 0
@@ -140,132 +145,125 @@ class HandImporter:
 
         files = self._list_input_files()
 
-        # Defensive: never allow <= 0
-        batch_size = max(1, int(batch_size))
+        for path in files:
+            event: Dict[str, Any] = {
+                "pipeline": "hands",
+                "file_name": path.name,
+                "file_hash": None,
+                "status": None,
+                "reason": None,
+                "tournament_id": None,
+                "hands_in_file": 0,
+                "hands_inserted": 0,
+            }
 
-        batches = _chunked(files, batch_size)
+            try:
+                file_hash = sha256_file(path)
+                event["file_hash"] = file_hash
 
-        for batch_index, batch in enumerate(batches, start=1):
-            # Dry run: no DB writes; still move files? You said dry_run means no moves too.
-            if cfg.dry_run:
-                for path in batch:
-                    event: Dict[str, Any] = {
-                        "pipeline": "hand_histories",
-                        "file_name": path.name,
-                        "file_hash": None,
-                        "status": "dry_run",
-                        "reason": "no_db_no_move",
-                        "tournament_id": None,
-                        "hands_in_file": None,
-                        "rows_attempted": None,
-                        "batch_index": batch_index,
-                        "batch_size": batch_size,
-                    }
-                    try:
-                        event["file_hash"] = sha256_file(path)
-                        hands = parse_file(str(path), site=cfg.site)
-                        event["hands_in_file"] = len(hands)
-                        if hands:
-                            event["tournament_id"] = hands[0].tournament_id
-                        dry_runs += 1
-                    except Exception as e:
-                        errors += 1
-                        event["status"] = "error"
-                        event["reason"] = f"dry_run_parse_failed:{type(e).__name__}"
-                    log_jsonl(cfg.log_path, event)
-                continue
-
-            # Real run: commit every batch
-            with self.engine.connect() as conn:
-                trans = conn.begin()
+                # Parse hands
                 try:
-                    for path in batch:
-                        event: Dict[str, Any] = {
-                            "pipeline": "hand_histories",
-                            "file_name": path.name,
-                            "file_hash": None,
-                            "status": None,
-                            "reason": None,
-                            "tournament_id": None,
-                            "hands_in_file": None,
-                            "rows_attempted": None,
-                            "batch_index": batch_index,
-                            "batch_size": batch_size,
-                        }
+                    all_hands = parse_file(str(path), site=cfg.site)
+                except Exception as e:
+                    if not cfg.dry_run:
+                        safe_move_with_suffix(path, hcfg.folders.needs_review_dir)
+                    needs_review += 1
+                    event["status"] = "error"
+                    event["reason"] = f"parse_error:{type(e).__name__}"
+                    log_jsonl(cfg.log_path, event)
+                    continue
 
+                if not all_hands:
+                    if not cfg.dry_run:
+                        safe_move_with_suffix(path, hcfg.folders.needs_review_dir)
+                    needs_review += 1
+                    event["status"] = "needs_review"
+                    event["reason"] = "no_hands_parsed"
+                    log_jsonl(cfg.log_path, event)
+                    continue
+
+                event["hands_in_file"] = len(all_hands)
+                event["tournament_id"] = all_hands[0].tournament_id if all_hands else None
+
+                # Classify spots
+                classified_hands = [classify_preflop(h) for h in all_hands]
+
+                if cfg.dry_run:
+                    dry_runs += 1
+                    event["status"] = "dry_run"
+                    event["reason"] = "no_db_no_move"
+                    log_jsonl(cfg.log_path, event)
+                    continue
+
+                # Process in batches
+                hands_inserted_this_file = 0
+
+                for batch in _chunked(classified_hands, batch_size):
+                    with self.engine.connect() as conn:
+                        trans = conn.begin()
                         try:
-                            file_hash = sha256_file(path)
-                            event["file_hash"] = file_hash
-
-                            hands = parse_file(str(path), site=cfg.site)
-                            if not hands:
-                                safe_move_with_suffix(path, hcfg.folders.needs_review_dir)
-                                event["status"] = "needs_review"
-                                event["reason"] = "no_hands_parsed"
-                                needs_review += 1
-                                log_jsonl(cfg.log_path, event)
-                                continue
-
-                            hands = [classify_preflop(h) for h in hands]
-                            event["tournament_id"] = hands[0].tournament_id
-                            event["hands_in_file"] = len(hands)
-
-                            tournament_id = hands[0].tournament_id
-                            hand_ids = [h.hand_id for h in hands]
-
-                            existing = conn.execute(
+                            # Check for existing hands
+                            hand_ids = [h.hand_id for h in batch]
+                            existing_count = conn.execute(
                                 text(COUNT_EXISTING_HANDS_SQL),
-                                {"site": cfg.site, "tournament_id": tournament_id, "hand_ids": hand_ids},
-                            ).scalar_one()
+                                {
+                                    "site": cfg.site,
+                                    "tournament_id": batch[0].tournament_id,
+                                    "hand_ids": hand_ids,
+                                },
+                            ).scalar()
 
-                            if existing == len(hand_ids):
-                                safe_move_with_suffix(path, hcfg.folders.duplicate_dir)
-                                event["status"] = "duplicate"
-                                event["reason"] = "all_hand_ids_exist"
-                                duplicates += 1
-                                log_jsonl(cfg.log_path, event)
+                            if existing_count == len(batch):
+                                # All hands already exist
+                                trans.rollback()
                                 continue
 
-                            rows = [_to_row(h) for h in hands]
-                            conn.execute(text(INSERT_FACT_HAND_SQL), rows)
-                            event["rows_attempted"] = len(rows)
+                            # Insert hands
+                            rows = [_to_row(h) for h in batch]
+                            result = conn.execute(text(INSERT_FACT_HAND_SQL), rows)
+                            hands_inserted_this_file += result.rowcount
 
-                            safe_move_with_suffix(path, hcfg.folders.processed_dir)
-                            inserted_files += 1
-                            event["status"] = "inserted"
-                            event["reason"] = "ok"
-                            log_jsonl(cfg.log_path, event)
+                            trans.commit()
 
                         except Exception as e:
-                            # Per-file failure: move to needs review and keep going
+                            trans.rollback()
                             try:
                                 safe_move_with_suffix(path, hcfg.folders.needs_review_dir)
                             except Exception:
                                 pass
                             errors += 1
                             event["status"] = "error"
-                            event["reason"] = f"fatal:{type(e).__name__}"
+                            event["reason"] = f"db_error:{type(e).__name__}"
                             log_jsonl(cfg.log_path, event)
+                            break
+                else:
+                    # All batches succeeded
+                    safe_move_with_suffix(path, hcfg.folders.processed_dir)
+                    inserted += hands_inserted_this_file
+                    event["hands_inserted"] = hands_inserted_this_file
 
-                    trans.commit()
+                    if hands_inserted_this_file == 0:
+                        duplicates += 1
+                        event["status"] = "duplicate"
+                        event["reason"] = "all_hands_exist"
+                    else:
+                        event["status"] = "inserted"
+                        event["reason"] = "ok"
 
-                except Exception as e:
-                    # Batch-level failure: rollback just this batch
-                    trans.rollback()
-                    # Log batch failure once (do not spam)
-                    log_jsonl(cfg.log_path, {
-                        "pipeline": "hand_histories",
-                        "status": "error",
-                        "reason": f"batch_rollback:{type(e).__name__}",
-                        "batch_index": batch_index,
-                        "batch_size": batch_size,
-                        "files_in_batch": len(batch),
-                    })
-                    # IMPORTANT: don't move files here; we didnâ€™t process them safely.
-                    # Let them remain in input so you can retry.
-                    continue
+                    log_jsonl(cfg.log_path, event)
+
+            except Exception as e:
+                try:
+                    if not cfg.dry_run:
+                        safe_move_with_suffix(path, hcfg.folders.needs_review_dir)
+                except Exception:
+                    pass
+                errors += 1
+                event["status"] = "error"
+                event["reason"] = f"fatal:{type(e).__name__}"
+                log_jsonl(cfg.log_path, event)
 
         print(
-            f"Dry Runs: {dry_runs} | Inserted Files: {inserted_files} | "
-            f"Duplicates: {duplicates} | Needs Review: {needs_review} | Errors: {errors}"
+            f"Dry Runs: {dry_runs} | Inserted: {inserted} hands | Duplicates: {duplicates} files | "
+            f"Needs Review: {needs_review} | Errors: {errors}"
         )
