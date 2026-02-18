@@ -1,7 +1,6 @@
 # importer/gg_hand_history_parser.py
 from __future__ import annotations
 
-import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -27,16 +26,6 @@ SEAT_RE = re.compile(
 )
 DEALT_HERO_RE = re.compile(
     r"^Dealt to Hero \[(?P<c1>[2-9TJQKA][shdc]) (?P<c2>[2-9TJQKA][shdc])\]",
-    re.M
-)
-
-# Summary extraction for hero results
-SUMMARY_HERO_RESULT_RE = re.compile(
-    r"^Seat \d+: Hero .* (?:won|lost|collected) \((?P<result>[\d,]+)\)",
-    re.M
-)
-SHOWDOWN_COLLECT_RE = re.compile(
-    r"^(?P<name>.+?) collected (?P<amount>[\d,]+) from pot",
     re.M
 )
 
@@ -137,7 +126,8 @@ def _calculate_hero_total_bet(hand_text: str) -> int:
     This tracks:
     - Blinds posted
     - Calls
-    - Raises (the additional amount added)
+    - Raises (cumulative across all streets)
+    - Bets
     - All-ins
 
     Returns:
@@ -160,7 +150,7 @@ def _calculate_hero_total_bet(hand_text: str) -> int:
         elif m := re.match(r"calls (?P<amt>[\d,]+)", action):
             total_bet += _parse_int(m.group("amt"))
         # "raises 290 to 380"
-        # The "to 380" is the total on THIS STREET
+        # CRITICAL FIX: The "to 380" is the total on THIS STREET
         # For cumulative tracking across streets, we ADD this amount
         elif m := re.match(r"raises (?P<raise_amt>[\d,]+) to (?P<to_amt>[\d,]+)", action):
             to_amt = _parse_int(m.group("to_amt"))
@@ -285,8 +275,10 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
     Handles:
     - Hands in any order (reverse chronological or chronological)
     - Heads-up hands with only 2 seats (any seat numbers)
+    - 3-handed games
     - Commas in numeric values
     - Missing players (busted players not in seat list)
+    - Multi-street pots with raises (postflop raise bug fixed)
 
     Args:
         path: Path to the hand history file
@@ -435,6 +427,14 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
                     hero_stack_start=hero_stack_start,
                     hero_stack_end=hero_stack_end,
                     hero_net_chips=hero_net_chips,
+                    # Equity calculation fields (not yet implemented)
+                    went_to_showdown=None,
+                    allin_street=None,
+                    board_at_allin=None,
+                    pot_at_allin=None,
+                    hero_equity_at_allin=None,
+                    allin_adjusted_chips=None,
+                    villain_cards=None,
                     source_file_name=file_name,
                     source_file_hash=file_hash,
                 )
