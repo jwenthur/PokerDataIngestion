@@ -47,7 +47,7 @@ class ParsedHand:
     pot_at_allin: Optional[int]
     hero_equity_at_allin: Optional[float]  # 0-1 range (e.g., 0.6234 = 62.34%)
     allin_adjusted_chips: Optional[int]
-    villain_cards: Optional[str]  # Format: "player1:AhKd|player2:QsJs"
+    villain_cards: Optional[str]  # Villain's shown cards at showdown
 
     source_file_name: Optional[str]
     source_file_hash: Optional[str]

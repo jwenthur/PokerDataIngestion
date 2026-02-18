@@ -1,4 +1,5 @@
 # importer/gg_hand_history_parser.py
+# ENHANCED VERSION with intelligent all-in detection
 from __future__ import annotations
 
 import os
@@ -34,9 +35,7 @@ SUMMARY_MARK = "*** SUMMARY ***"
 
 
 def _split_into_hand_blocks(text: str) -> List[str]:
-    """
-    Split a file into individual hand blocks. Each hand starts with 'Poker Hand #...'
-    """
+    """Split a file into individual hand blocks"""
     starts = [m.start() for m in re.finditer(r"^Poker Hand #", text, re.M)]
     if not starts:
         return []
@@ -48,20 +47,13 @@ def _split_into_hand_blocks(text: str) -> List[str]:
 
 
 def _parse_positions(active_seats: List[int], button_seat: int) -> dict[int, str]:
-    """
-    Returns map seat -> position.
-    For 3-handed: BTN (button), SB (next), BB (next next) in seat-order around the table.
-    For HU: button seat is SB, other seat is BB.
-    """
+    """Returns map seat -> position"""
     seats_sorted = sorted(active_seats)
     if len(seats_sorted) == 2:
-        # HU: button = SB, other = BB
         other = [s for s in seats_sorted if s != button_seat][0]
         return {button_seat: "SB", other: "BB"}
 
-    # 3-handed or more (we only expect up to 3 right now)
     if button_seat not in seats_sorted:
-        # Fallback
         return {s: None for s in seats_sorted}  # type: ignore
 
     btn_idx = seats_sorted.index(button_seat)
@@ -71,7 +63,6 @@ def _parse_positions(active_seats: List[int], button_seat: int) -> dict[int, str
 
 
 def _bucket_effective_stack(eff_bb: float) -> str:
-    # Your default scheme (we can tweak later)
     if eff_bb <= 5:
         return "0-5"
     if eff_bb <= 8:
@@ -86,9 +77,7 @@ def _bucket_effective_stack(eff_bb: float) -> str:
 
 
 def _extract_preflop_block(hand_text: str) -> str:
-    """
-    Extract lines from HOLE CARDS through just before FLOP, or SUMMARY if no flop.
-    """
+    """Extract lines from HOLE CARDS through just before FLOP"""
     if HOLE_CARDS_MARK not in hand_text:
         return ""
 
@@ -105,15 +94,12 @@ def _extract_preflop_block(hand_text: str) -> str:
 
 
 def _parse_int(s: str) -> int:
-    """Parse integer removing commas: '1,120' -> 1120"""
+    """Parse integer removing commas"""
     return int(s.replace(",", ""))
 
 
 def _extract_showdown_cards(hand_text: str) -> Dict[str, str]:
-    """
-    Extract shown hole cards from showdown.
-    Returns {player_name: "AsKh"}
-    """
+    """Extract shown hole cards from showdown. Returns {player_name: "AsKh"}"""
     shown_cards = {}
     for m in SHOWS_RE.finditer(hand_text):
         name = m.group("n").strip()
@@ -123,83 +109,96 @@ def _extract_showdown_cards(hand_text: str) -> Dict[str, str]:
 
 
 def _extract_board_cards(hand_text: str) -> Optional[str]:
-    """Extract board cards from summary. Returns 'As Kh Qd Jc Tc' format"""
+    """Extract board cards from summary"""
     m = BOARD_RE.search(hand_text)
     if m:
         return m.group("cards")
     return None
 
 
-def _detect_allin_street(hand_text: str) -> Tuple[Optional[str], Optional[str]]:
+def _detect_allin_street(hand_text: str, starting_stacks: Dict[str, int]) -> Tuple[Optional[str], Optional[str]]:
     """
-    Detect which street the all-in occurred and what board was present.
-    Returns (street, board_at_allin) where:
-      - street: 'preflop', 'flop', 'turn', 'river', or None
-      - board_at_allin: Cards on board when all-in occurred (e.g., '2c 5h 9c')
+    ENHANCED all-in detection using THREE methods:
+    1. Explicit "and is all-in" markers
+    2. Cards shown before streets complete (implicit all-in)
+    3. Bet/raise equals player's entire starting stack
+
+    Returns (street, board_at_allin)
     """
-    # Find all-in action
+    # Method 1: Check for cards shown before flop (most reliable for preflop all-ins)
+    shows_pattern = re.compile(r': shows \[', re.M)
+    shows_matches = list(shows_pattern.finditer(hand_text))
+
+    if shows_matches:
+        flop_pos = hand_text.find(FLOP_MARK) if FLOP_MARK in hand_text else len(hand_text)
+
+        for show_match in shows_matches:
+            if show_match.start() < flop_pos:
+                # Cards shown before flop = preflop all-in
+                return 'preflop', ''
+
+    # Method 2: Explicit all-in marker
     allin_match = ALLIN_RE.search(hand_text)
-    if not allin_match:
-        return None, None
 
-    allin_pos = allin_match.start()
+    if allin_match:
+        allin_pos = allin_match.start()
 
-    # Determine which street based on position
-    flop_pos = hand_text.find(FLOP_MARK) if FLOP_MARK in hand_text else len(hand_text)
-    turn_pos = hand_text.find(TURN_MARK) if TURN_MARK in hand_text else len(hand_text)
-    river_pos = hand_text.find(RIVER_MARK) if RIVER_MARK in hand_text else len(hand_text)
+        # Determine street
+        flop_pos = hand_text.find(FLOP_MARK) if FLOP_MARK in hand_text else len(hand_text)
+        turn_pos = hand_text.find(TURN_MARK) if TURN_MARK in hand_text else len(hand_text)
+        river_pos = hand_text.find(RIVER_MARK) if RIVER_MARK in hand_text else len(hand_text)
 
-    if allin_pos < flop_pos:
-        return 'preflop', ''
-    elif allin_pos < turn_pos:
-        # All-in on flop - extract flop cards
-        flop_match = re.search(r"\*\*\* FLOP \*\*\* \[(?P<cards>[^\]]+)\]", hand_text)
-        if flop_match:
-            return 'flop', flop_match.group("cards")
-        return 'flop', ''
-    elif allin_pos < river_pos:
-        # All-in on turn - extract flop + turn
-        turn_match = re.search(r"\*\*\* TURN \*\*\* \[([^\]]+)\] \[(?P<turn>[^\]]+)\]", hand_text)
-        if turn_match:
-            # Get full board through turn from the TURN line
+        if allin_pos < flop_pos:
+            return 'preflop', ''
+        elif allin_pos < turn_pos:
+            flop_match = re.search(r"\*\*\* FLOP \*\*\* \[(?P<cards>[^\]]+)\]", hand_text)
+            if flop_match:
+                return 'flop', flop_match.group("cards")
+            return 'flop', ''
+        elif allin_pos < river_pos:
             full_match = re.search(r"\*\*\* TURN \*\*\* \[(?P<board>[^\]]+)\]", hand_text)
             if full_match:
                 return 'turn', full_match.group("board")
-        return 'turn', ''
-    else:
-        # All-in on river - extract full board minus river
-        river_match = re.search(r"\*\*\* RIVER \*\*\* \[([^\]]+)\] \[(?P<river>[^\]]+)\]", hand_text)
-        if river_match:
-            full_match = re.search(r"\*\*\* RIVER \*\*\* \[(?P<board>[^\]]+)\]", hand_text)
-            if full_match:
-                # Remove the last card (river card)
-                board = full_match.group("board")
+            return 'turn', ''
+        else:
+            river_match = re.search(r"\*\*\* RIVER \*\*\* \[(?P<board>[^\]]+)\]", hand_text)
+            if river_match:
+                board = river_match.group("board")
                 cards = board.split()
                 if len(cards) >= 4:
                     return 'river', ' '.join(cards[:4])
-        return 'river', ''
+            return 'river', ''
+
+    # Method 3: Check for implicit all-ins by comparing bet to stack
+    # This catches cases where GG doesn't write "and is all-in"
+    lines = hand_text.split('\n')
+
+    for line in lines:
+        # Stop at flop
+        if FLOP_MARK in line:
+            break
+
+        # Check for raises that equal player's starting stack
+        raise_match = re.match(r'^(\w+): raises [\d,]+ to ([\d,]+)', line)
+        if raise_match:
+            player = raise_match.group(1)
+            amount = _parse_int(raise_match.group(2))
+
+            if player in starting_stacks and starting_stacks[player] == amount:
+                # Bet equals entire starting stack = all-in!
+                return 'preflop', ''
+
+    return None, None
 
 
 def _calculate_hero_chip_result(hand_text: str, hero_stack_start: Optional[int]) -> Tuple[Optional[int], Optional[int]]:
     """
     Calculate hero's ending stack and net chips from hand actions.
-
-    Parses all Hero actions to determine:
-    - How many chips Hero invested (blinds, bets, calls, raises)
-    - How many chips Hero won (collected from pot)
-    - Final stack and net result
-
-    Args:
-        hand_text: The complete hand history text block
-        hero_stack_start: Hero's starting stack for this hand
-
-    Returns:
-        (hero_stack_end, hero_net_chips)
+    FIXED: Properly handles multi-street pots with raises.
     """
     if hero_stack_start is None:
         return None, None
 
-    # Regex patterns for Hero actions
     POST_BLIND_RE = re.compile(r"^Hero: posts (?:small blind|big blind) ([\d,]+)", re.M)
     CALL_RE = re.compile(r"^Hero: calls ([\d,]+)", re.M)
     RAISE_RE = re.compile(r"^Hero: raises [\d,]+ to ([\d,]+)", re.M)
@@ -209,60 +208,47 @@ def _calculate_hero_chip_result(hand_text: str, hero_stack_start: Optional[int])
 
     chips_invested = 0
     chips_won = 0
-    max_committed = 0
 
     lines = hand_text.split('\n')
 
     for line in lines:
-        # Post blinds
         m = POST_BLIND_RE.match(line)
         if m:
             amount = _parse_int(m.group(1))
             chips_invested += amount
-            max_committed += amount
             continue
 
-        # Calls
         m = CALL_RE.match(line)
         if m:
             amount = _parse_int(m.group(1))
             chips_invested += amount
-            max_committed += amount
             continue
 
-        # Raises - "raises X to Y" means Y is TOTAL amount in pot
+        # CRITICAL FIX: Add full street amount to cumulative total
         m = RAISE_RE.match(line)
         if m:
-            total_amount = _parse_int(m.group(1))
-            additional = total_amount - max_committed
-            chips_invested += additional
-            max_committed = total_amount
+            street_total = _parse_int(m.group(1))
+            chips_invested += street_total
             continue
 
-        # Bets
         m = BET_RE.match(line)
         if m:
             amount = _parse_int(m.group(1))
             chips_invested += amount
-            max_committed += amount
             continue
 
-        # Uncalled bets returned
         m = UNCALLED_RE.match(line)
         if m:
             amount = _parse_int(m.group(1))
             chips_invested -= amount
-            max_committed -= amount
             continue
 
-        # Chips won
         m = COLLECTED_RE.match(line)
         if m:
             amount = _parse_int(m.group(1))
             chips_won = amount
             continue
 
-    # Calculate final results
     hero_stack_end = hero_stack_start - chips_invested + chips_won
     hero_net_chips = hero_stack_end - hero_stack_start
 
@@ -272,52 +258,38 @@ def _calculate_hero_chip_result(hand_text: str, hero_stack_start: Optional[int])
 def _calculate_equity_and_adjusted_chips(
         hand_text: str,
         hero_cards: Optional[str],
-        hero_seat: Optional[int]
+        hero_seat: Optional[int],
+        starting_stacks: Dict[str, int]
 ) -> Tuple[bool, Optional[str], Optional[str], Optional[int], Optional[float], Optional[int], Optional[str]]:
-    """
-    Calculate all-in equity and adjusted chips.
+    """Calculate all-in equity and adjusted chips with ENHANCED all-in detection"""
 
-    Returns:
-        (went_to_showdown, allin_street, board_at_allin, pot_at_allin,
-         hero_equity_at_allin, allin_adjusted_chips, villain_cards)
-    """
-    # Check if hand went to showdown
     went_to_showdown = SHOWDOWN_MARK in hand_text
 
     if not went_to_showdown or not hero_cards:
         return False, None, None, None, None, None, None
 
-    # Extract all shown cards
     shown_cards = _extract_showdown_cards(hand_text)
 
-    # CRITICAL CHECK: Was Hero in the showdown?
-    # If Hero folded before showdown, Hero won't be in shown_cards
     if "Hero" not in shown_cards:
-        # Hero folded - don't calculate equity for a pot Hero isn't in
         return True, None, None, None, None, None, None
 
-    # Detect all-in street and board
-    allin_street, board_at_allin = _detect_allin_street(hand_text)
+    # ENHANCED: Pass starting stacks to all-in detector
+    allin_street, board_at_allin = _detect_allin_street(hand_text, starting_stacks)
 
     if not allin_street:
-        # No all-in detected, but went to showdown
         return True, None, None, None, None, None, None
 
-    # Get villain cards (Hero was in showdown)
     villain_cards = {k: v for k, v in shown_cards.items() if k != "Hero"}
 
     if not villain_cards:
-        # No villain cards shown, can't calculate equity
         return True, allin_street, board_at_allin, None, None, None, None
 
-    # Get pot size from summary
     pot_match = re.search(r"Total pot ([\d,]+)", hand_text)
     if not pot_match:
         return True, allin_street, board_at_allin, None, None, None, None
 
     pot_at_allin = _parse_int(pot_match.group(1))
 
-    # Calculate equity
     villain_card_list = list(villain_cards.values())
     board_str = board_at_allin.replace(" ", "") if board_at_allin else ""
 
@@ -325,28 +297,21 @@ def _calculate_equity_and_adjusted_chips(
         hero_cards=hero_cards,
         villain_cards=villain_card_list,
         board=board_str,
-        num_simulations=5000  # Balance speed vs accuracy
+        num_simulations=5000
     )
 
     if equity is None:
-        # Equity calculation failed
         villain_cards_str = "|".join([f"{k}:{v}" for k, v in villain_cards.items()])
         return True, allin_street, board_at_allin, pot_at_allin, None, None, villain_cards_str
 
-    # Calculate adjusted chips
-    # Hero's EV in this pot = equity * pot_size
     allin_adjusted_chips = int(equity * pot_at_allin)
-
-    # Format villain cards for storage: "player1:AhKd|player2:QsJs"
     villain_cards_str = "|".join([f"{k}:{v}" for k, v in villain_cards.items()])
 
     return True, allin_street, board_at_allin, pot_at_allin, equity, allin_adjusted_chips, villain_cards_str
 
 
 def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
-    """
-    Parse a GG hand history file into ParsedHand objects.
-    """
+    """Parse a GG hand history file into ParsedHand objects with ENHANCED all-in detection"""
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         text = f.read()
 
@@ -357,125 +322,127 @@ def parse_file(path: str, site: str = "GG") -> List[ParsedHand]:
     parsed: List[ParsedHand] = []
 
     for block in hand_blocks:
-        m = HAND_START_RE.search(block)
-        if not m:
-            continue
+        try:
+            m = HAND_START_RE.search(block)
+            if not m:
+                continue
 
-        hand_id = m.group("hand_id")
-        tournament_id = int(m.group("tournament_id"))
+            hand_id = m.group("hand_id")
+            tournament_id = int(m.group("tournament_id"))
 
-        # Timestamp
-        ts_m = TS_RE.search(block)
-        if not ts_m:
-            continue
-        hand_ts_local = datetime.strptime(ts_m.group("ts"), "%Y/%m/%d %H:%M:%S")
+            ts_m = TS_RE.search(block)
+            if not ts_m:
+                continue
+            hand_ts_local = datetime.strptime(ts_m.group("ts"), "%Y/%m/%d %H:%M:%S")
 
-        # Level / blinds
-        level = None
-        sb_amount = None
-        bb_amount = None
-        lvl_m = LEVEL_RE.search(block)
-        if lvl_m:
-            level = int(lvl_m.group("level"))
-            sb_amount = int(lvl_m.group("sb"))
-            bb_amount = int(lvl_m.group("bb"))
-        else:
-            continue
+            level = None
+            sb_amount = None
+            bb_amount = None
+            lvl_m = LEVEL_RE.search(block)
+            if lvl_m:
+                level = int(lvl_m.group("level"))
+                sb_amount = int(lvl_m.group("sb"))
+                bb_amount = int(lvl_m.group("bb"))
+            else:
+                continue
 
-        # Table / button
-        table_id = None
-        max_players = 3
-        button_seat = None
-        t_m = TABLE_RE.search(block)
-        if t_m:
-            table_id = t_m.group("table_id")
-            max_players = int(t_m.group("max_players"))
-            button_seat = int(t_m.group("button_seat"))
+            table_id = None
+            max_players = 3
+            button_seat = None
+            t_m = TABLE_RE.search(block)
+            if t_m:
+                table_id = t_m.group("table_id")
+                max_players = int(t_m.group("max_players"))
+                button_seat = int(t_m.group("button_seat"))
 
-        # Seats and stacks at start
-        seats = []
-        hero_seat = None
-        hero_stack_start = None
+            # Parse seats and build starting_stacks dict
+            seats = []
+            hero_seat = None
+            hero_stack_start = None
+            starting_stacks: Dict[str, int] = {}  # For all-in detection
 
-        for sm in SEAT_RE.finditer(block):
-            seat = int(sm.group("seat"))
-            name = sm.group("name").strip()
-            stack = _parse_int(sm.group("stack"))
-            seats.append(seat)
-            if name == "Hero":
-                hero_seat = seat
-                hero_stack_start = stack
+            for sm in SEAT_RE.finditer(block):
+                seat = int(sm.group("seat"))
+                name = sm.group("name").strip()
+                stack = _parse_int(sm.group("stack"))
+                seats.append(seat)
+                starting_stacks[name] = stack  # Track all stacks
 
-        players_in_hand = len(seats)
-        is_hu = players_in_hand == 2
+                if name == "Hero":
+                    hero_seat = seat
+                    hero_stack_start = stack
 
-        hero_position = None
-        if button_seat is not None and hero_seat is not None and seats:
-            pos_map = _parse_positions(seats, button_seat)
-            hero_position = pos_map.get(hero_seat)
+            players_in_hand = len(seats)
+            is_hu = players_in_hand == 2
 
-        # Hero cards
-        hero_cards = None
-        dealt = DEALT_HERO_RE.search(block)
-        if dealt:
-            hero_cards = f"{dealt.group('c1')}{dealt.group('c2')}"
+            hero_position = None
+            if button_seat is not None and hero_seat is not None and seats:
+                pos_map = _parse_positions(seats, button_seat)
+                hero_position = pos_map.get(hero_seat)
 
-        # Effective stack in BB
-        effective_stack_bb = None
-        stack_bucket = None
-        if hero_stack_start is not None and bb_amount:
-            effective_stack_bb = round(hero_stack_start / bb_amount, 2)
-            stack_bucket = _bucket_effective_stack(effective_stack_bb)
+            hero_cards = None
+            dealt = DEALT_HERO_RE.search(block)
+            if dealt:
+                hero_cards = f"{dealt.group('c1')}{dealt.group('c2')}"
 
-        preflop_block = _extract_preflop_block(block)
+            effective_stack_bb = None
+            stack_bucket = None
+            if hero_stack_start is not None and bb_amount:
+                effective_stack_bb = round(hero_stack_start / bb_amount, 2)
+                stack_bucket = _bucket_effective_stack(effective_stack_bb)
 
-        # Calculate equity and adjusted chips
-        (went_to_showdown, allin_street, board_at_allin, pot_at_allin,
-         hero_equity_at_allin, allin_adjusted_chips, villain_cards) = _calculate_equity_and_adjusted_chips(
-            block, hero_cards, hero_seat
-        )
+            preflop_block = _extract_preflop_block(block)
 
-        # Calculate hero chip result
-        hero_stack_end, hero_net_chips = _calculate_hero_chip_result(block, hero_stack_start)
-
-        parsed.append(
-            ParsedHand(
-                site=site,
-                tournament_id=tournament_id,
-                hand_id=hand_id,
-                hand_ts_local=hand_ts_local,
-                table_id=table_id,
-                max_players=max_players,
-                players_in_hand=players_in_hand,
-                is_hu=is_hu,
-                level=level,
-                sb_amount=sb_amount,
-                bb_amount=bb_amount,
-                button_seat=button_seat,
-                hero_seat=hero_seat,
-                hero_position=hero_position,
-                effective_stack_bb=effective_stack_bb,
-                stack_bucket=stack_bucket,
-                hero_cards=hero_cards,
-                preflop_spot_type=None,  # classifier fills this
-                hero_preflop_action=None,  # classifier fills this
-                faced_action_type=None,  # classifier fills this
-                is_all_in_preflop=None,  # classifier fills this
-                preflop_action_line=preflop_block or None,
-                hero_stack_start=hero_stack_start,
-                hero_stack_end=hero_stack_end,
-                hero_net_chips=hero_net_chips,
-                # ChipEV fields
-                went_to_showdown=went_to_showdown,
-                allin_street=allin_street,
-                board_at_allin=board_at_allin,
-                pot_at_allin=pot_at_allin,
-                hero_equity_at_allin=hero_equity_at_allin,
-                allin_adjusted_chips=allin_adjusted_chips,
-                villain_cards=villain_cards,
-                source_file_name=file_name,
-                source_file_hash=file_hash,
+            # ENHANCED: Pass starting_stacks to equity calculator
+            (went_to_showdown, allin_street, board_at_allin, pot_at_allin,
+             hero_equity_at_allin, allin_adjusted_chips, villain_cards) = _calculate_equity_and_adjusted_chips(
+                block, hero_cards, hero_seat, starting_stacks
             )
-        )
+
+            hero_stack_end, hero_net_chips = _calculate_hero_chip_result(block, hero_stack_start)
+
+            parsed.append(
+                ParsedHand(
+                    site=site,
+                    tournament_id=tournament_id,
+                    hand_id=hand_id,
+                    hand_ts_local=hand_ts_local,
+                    table_id=table_id,
+                    max_players=max_players,
+                    players_in_hand=players_in_hand,
+                    is_hu=is_hu,
+                    level=level,
+                    sb_amount=sb_amount,
+                    bb_amount=bb_amount,
+                    button_seat=button_seat,
+                    hero_seat=hero_seat,
+                    hero_position=hero_position,
+                    effective_stack_bb=effective_stack_bb,
+                    stack_bucket=stack_bucket,
+                    hero_cards=hero_cards,
+                    preflop_spot_type=None,
+                    hero_preflop_action=None,
+                    faced_action_type=None,
+                    is_all_in_preflop=None,
+                    preflop_action_line=preflop_block or None,
+                    hero_stack_start=hero_stack_start,
+                    hero_stack_end=hero_stack_end,
+                    hero_net_chips=hero_net_chips,
+                    # ChipEV fields
+                    went_to_showdown=went_to_showdown,
+                    allin_street=allin_street,
+                    board_at_allin=board_at_allin,
+                    pot_at_allin=pot_at_allin,
+                    hero_equity_at_allin=hero_equity_at_allin,
+                    allin_adjusted_chips=allin_adjusted_chips,
+                    villain_cards=villain_cards,
+                    source_file_name=file_name,
+                    source_file_hash=file_hash,
+                )
+            )
+
+        except Exception as e:
+            print(f"Warning: Failed to parse hand block: {type(e).__name__}: {e}")
+            continue
 
     return parsed
