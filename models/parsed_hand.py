@@ -42,12 +42,13 @@ class ParsedHand:
 
     # ChipEV calculation fields
     went_to_showdown: Optional[bool]
-    allin_street: Optional[str]  # 'preflop', 'flop', 'turn', 'river', or None
-    board_at_allin: Optional[str]  # Board cards when all-in occurred
+    allin_street: Optional[str]            # 'preflop', 'flop', 'turn', 'river', or None
+    board_at_allin: Optional[str]          # Board cards when all-in occurred
     pot_at_allin: Optional[int]
     hero_equity_at_allin: Optional[float]  # 0-1 range (e.g., 0.6234 = 62.34%)
-    allin_adjusted_chips: Optional[int]
-    villain_cards: Optional[str]  # Villain's shown cards at showdown
+    hero_chips_invested: Optional[int]     # Total chips Hero put into pot this hand
+    allin_adjusted_chips: Optional[int]    # = int(equity * pot) - hero_chips_invested
+    villain_cards: Optional[str]           # Villain's shown cards at showdown
 
     source_file_name: Optional[str]
     source_file_hash: Optional[str]
