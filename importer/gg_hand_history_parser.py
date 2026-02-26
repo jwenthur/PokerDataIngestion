@@ -134,6 +134,32 @@ def _calculate_hero_chips_invested(hand_text: str) -> int:
     return max(0, grand_total)
 
 
+def _calculate_player_chips_invested(hand_text: str, player_name: str) -> int:
+    """
+    Calculate total chips committed to the pot by any named player.
+    Same street-relative raise logic as _calculate_hero_chips_invested.
+    Used to compute opponents' investment for effective pot calculation.
+    """
+    escaped = re.escape(player_name)
+    grand_total = 0
+    for segment in _split_into_street_segments(hand_text):
+        street_total = 0
+        for m in re.finditer(rf"^{escaped}: (.*)", segment, re.M):
+            action = m.group(1)
+            if ma := re.match(r"posts (?:small blind|big blind|ante) ([\d,]+)", action):
+                street_total += _parse_int(ma.group(1))
+            elif ma := re.match(r"calls ([\d,]+)", action):
+                street_total += _parse_int(ma.group(1))
+            elif ma := re.match(r"raises [\d,]+ to ([\d,]+)", action):
+                street_total = _parse_int(ma.group(1))   # reset — street-relative
+            elif ma := re.match(r"bets ([\d,]+)", action):
+                street_total += _parse_int(ma.group(1))
+        grand_total += street_total
+    unc = re.search(rf"Uncalled bet \(([\d,]+)\) returned to {escaped}", hand_text, re.M)
+    if unc:
+        grand_total -= _parse_int(unc.group(1))
+    return max(0, grand_total)
+
 def _extract_showdown_cards(hand_text: str) -> Dict[str, str]:
     shown_cards = {}
     for m in SHOWS_RE.finditer(hand_text):
@@ -228,7 +254,11 @@ def _calculate_equity_and_adjusted_chips(
 
     allin_adjusted_chips = int(hero_equity * pot_at_allin) - hero_chips_invested
     """
-    went_to_showdown = SHOWDOWN_MARK in hand_text
+    # Hero went to showdown only if Hero's cards were shown.
+    # GGPoker writes *** SHOWDOWN *** even when everyone folds or Hero folded,
+    # so checking the marker alone gives false positives.
+    _shown_players = {m.group('player').strip() for m in SHOWS_RE.finditer(hand_text)}
+    went_to_showdown = SHOWDOWN_MARK in hand_text and 'Hero' in _shown_players
 
     if not went_to_showdown or not hero_cards:
         return False, None, None, None, None, None, None, None
@@ -249,7 +279,7 @@ def _calculate_equity_and_adjusted_chips(
     if not pot_match:
         return True, allin_street, board_at_allin, None, None, None, None, None
 
-    pot_at_allin = _parse_int(pot_match.group(1))
+    total_pot = _parse_int(pot_match.group(1))
     villain_cards_str = "|".join(f"{k}:{v}" for k, v in villain_cards.items())
 
     board_str = board_at_allin.replace(" ", "") if board_at_allin else ""
@@ -261,6 +291,18 @@ def _calculate_equity_and_adjusted_chips(
     )
 
     hero_chips_invested = _calculate_hero_chips_invested(hand_text)
+
+    # Hero can only win the portion of the pot they're eligible for.
+    # Any chips an opponent put in beyond hero's investment form a side pot
+    # that hero cannot win. Folded players' chips (e.g. a folded blind) stay
+    # in the pot and are fully winnable by hero.
+    # Formula: effective_pot = total_pot - sum(max(0, opp_invested - hero_invested))
+    villain_invested = [
+        _calculate_player_chips_invested(hand_text, name)
+        for name in villain_cards.keys()
+    ]
+    side_pot_excluded = sum(max(0, opp - hero_chips_invested) for opp in villain_invested)
+    pot_at_allin = total_pot - side_pot_excluded
 
     if equity is None:
         return (True, allin_street, board_at_allin, pot_at_allin,
