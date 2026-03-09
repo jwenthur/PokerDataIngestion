@@ -100,11 +100,7 @@ FACT_LOOKUP_SQL = """
 SELECT
     hand_id,
     site,
-    tournament_id,
-    preflop_spot_type,
-    stack_bucket,
-    hero_cards,
-    hero_position
+    tournament_id
 FROM public.fact_hand
 WHERE hand_id = ANY(:hand_ids)
 """
@@ -143,25 +139,23 @@ UPSERT_SQL = """
 INSERT INTO public.hand_decision (
     site, tournament_id, hand_id,
     street,
-    preflop_spot_type, stack_bucket, hero_cards, hero_position,
     hero_action, correct_action, is_correct,
     notes, source, reviewed_at
 )
 VALUES (
     :site, :tournament_id, :hand_id,
     :street,
-    :preflop_spot_type, :stack_bucket, :hero_cards, :hero_position,
     :hero_action, :correct_action, :is_correct,
     :notes, :source, NOW()
 )
 ON CONFLICT (site, tournament_id, hand_id, street)
 DO UPDATE SET
-    hero_action         = EXCLUDED.hero_action,
-    correct_action      = EXCLUDED.correct_action,
-    is_correct          = EXCLUDED.is_correct,
-    notes               = EXCLUDED.notes,
-    source              = EXCLUDED.source,
-    reviewed_at         = NOW();
+    hero_action     = EXCLUDED.hero_action,
+    correct_action  = EXCLUDED.correct_action,
+    is_correct      = EXCLUDED.is_correct,
+    notes           = EXCLUDED.notes,
+    source          = EXCLUDED.source,
+    reviewed_at     = NOW();
 """
 
 
@@ -217,19 +211,15 @@ def run(excel_path: Path, dry_run: bool = False) -> None:
             continue
 
         rows_to_upsert.append({
-            "site":              fact["site"],
-            "tournament_id":     int(fact["tournament_id"]),
-            "hand_id":           hand_id,
-            "street":            street,
-            "preflop_spot_type": fact.get("preflop_spot_type"),
-            "stack_bucket":      fact.get("stack_bucket"),
-            "hero_cards":        fact.get("hero_cards"),
-            "hero_position":     fact.get("hero_position"),
-            "hero_action":       hero_action,
-            "correct_action":    correct_action if correct_action else None,
-            "is_correct":        is_correct,
-            "notes":             str(notes) if notes else None,
-            "source":            "manual",
+            "site":           fact["site"],
+            "tournament_id":  int(fact["tournament_id"]),
+            "hand_id":        hand_id,
+            "street":         street,
+            "hero_action":    hero_action,
+            "correct_action": correct_action if correct_action else None,
+            "is_correct":     is_correct,
+            "notes":          str(notes) if notes else None,
+            "source":         "manual",
         })
 
     if not rows_to_upsert:
