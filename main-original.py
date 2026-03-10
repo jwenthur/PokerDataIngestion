@@ -6,7 +6,6 @@ from pathlib import Path
 from db.engine import build_engine_from_env
 from importer.tournament_importer import TournamentImporter, build_import_config
 from importer.hand_importer import HandImporter
-from importer.decision_importer import DecisionImporter
 
 
 def _default_config_path() -> Path:
@@ -54,19 +53,6 @@ def build_cli() -> argparse.ArgumentParser:
         help="Number of hand history files to import per DB transaction (default: 100).",
     )
 
-    # Import decisions
-    p_d = sub.add_parser("import-decisions", help="Import hand decision Excel file into hand_decision table.")
-    p_d.add_argument(
-        "excel_path",
-        type=str,
-        help="Path to filled hand_decision_template.xlsx (e.g. data/hand_decision_template.xlsx)",
-    )
-    p_d.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview what would be imported without writing to DB.",
-    )
-
     return parser
 
 
@@ -74,27 +60,23 @@ def main() -> None:
     parser = build_cli()
     args = parser.parse_args()
 
+    cfg_path = Path(args.config).expanduser()
+    cfg = build_import_config(cfg_path)
+
+    # Optional override
+    if getattr(args, "dry_run", False):
+        cfg = type(cfg)(**{**cfg.__dict__, "dry_run": True})
+
     engine = build_engine_from_env()
 
     if args.command == "ingest-tournaments":
-        cfg = build_import_config(Path(args.config).expanduser())
-        if getattr(args, "dry_run", False):
-            cfg = type(cfg)(**{**cfg.__dict__, "dry_run": True})
-        TournamentImporter(cfg=cfg, engine=engine).run()
+        importer = TournamentImporter(cfg=cfg, engine=engine)
+        importer.run()
         return
 
     if args.command == "ingest-hands":
-        cfg = build_import_config(Path(args.config).expanduser())
-        if getattr(args, "dry_run", False):
-            cfg = type(cfg)(**{**cfg.__dict__, "dry_run": True})
-        HandImporter(cfg=cfg, engine=engine).run(batch_size=args.batch_size)
-        return
-
-    if args.command == "import-decisions":
-        DecisionImporter(engine=engine).run(
-            excel_path=Path(args.excel_path).expanduser(),
-            dry_run=args.dry_run,
-        )
+        importer = HandImporter(cfg=cfg, engine=engine)
+        importer.run(batch_size=args.batch_size)
         return
 
     raise ValueError(f"Unknown command: {args.command}")
