@@ -6,6 +6,7 @@
   <component name="ChangeListManager">
     <list default="true" id="13170ce9-d96a-4586-9df1-b3537e4d43c7" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/hand_decision_template.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/data/hand_decision_template.xlsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
